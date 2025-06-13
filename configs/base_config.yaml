@@ -1,0 +1,213 @@
+# STRATO-PEFT 基础配置模板
+# 所有具体配置文件都应继承此基础配置
+
+# 实验元信息
+experiment:
+  name: "base_experiment"
+  phase: "P-0"  # P-0, P-1, P-2
+  description: "Base configuration template"
+  tags: ["base", "template"]
+  
+# 模型配置
+model:
+  name: "meta-llama/Llama-2-7b-hf"
+  cache_dir: "./cache/models"
+  torch_dtype: "float16"  # float16, bfloat16, float32
+  device_map: "auto"
+  trust_remote_code: false
+  
+# 任务配置
+task:
+  name: "mmlu"  # mmlu, gsm8k, humaneval, alpaca
+  subset: null  # 用于指定子集，如 "dev" for MMLU
+  max_samples: null  # 限制样本数量，null表示使用全部
+  data_dir: "./data"
+  
+# PEFT方法配置
+peft:
+  method: "lora"  # lora, adalora, dora, strato_peft
+  
+  # LoRA通用参数
+  lora:
+    r: 16
+    alpha: 32
+    dropout: 0.1
+    target_modules: ["q_proj", "v_proj", "k_proj", "o_proj", "gate_proj", "up_proj", "down_proj"]
+    bias: "none"
+    task_type: "CAUSAL_LM"
+    
+  # AdaLoRA特定参数
+  adalora:
+    init_r: 12
+    target_r: 8
+    beta1: 0.85
+    beta2: 0.85
+    tinit: 0
+    tfinal: 1000
+    deltaT: 10
+    
+  # DoRA特定参数
+  dora:
+    r: 32
+    use_dora: true
+    
+  # STRATO-PEFT特定参数
+  strato_peft:
+    # 成本权重
+    lambda_cost: 0.2  # 成本-奖励权衡参数
+    alpha_params: 1.0  # 参数成本权重
+    beta_flops: 1.0    # FLOPs成本权重
+    gamma_vram: 1.0    # VRAM成本权重
+    
+    # RL智能体配置
+    agent:
+      algorithm: "PPO"
+      learning_rate: 3e-4
+      n_steps: 2048
+      batch_size: 64
+      n_epochs: 10
+      gamma: 0.99
+      gae_lambda: 0.95
+      clip_range: 0.2
+      ent_coef: 0.01
+      vf_coef: 0.5
+      
+    # 秩调度器配置
+    scheduler:
+      rank_max: 32
+      rank_min: 1
+      growth_factor: 1.2
+      shrink_factor: 0.8
+      patience: 5
+      
+    # Go-Explore缓存配置
+    memory:
+      cache_size: 1000
+      revisit_threshold: 3
+      similarity_threshold: 0.95
+      
+    # 内循环配置
+    inner_loop:
+      num_steps: 100  # K值
+      eval_frequency: 20
+      early_stopping_patience: 10
+      
+# 训练配置
+training:
+  # 优化器
+  optimizer:
+    name: "AdamW"
+    lr: 2e-4
+    weight_decay: 0.01
+    betas: [0.9, 0.999]
+    eps: 1e-8
+    
+  # 学习率调度
+  lr_scheduler:
+    name: "cosine"
+    warmup_steps: 100
+    num_training_steps: 1000
+    
+  # 训练参数
+  num_epochs: 3
+  per_device_train_batch_size: 4
+  per_device_eval_batch_size: 8
+  gradient_accumulation_steps: 16
+  max_grad_norm: 1.0
+  
+  # 混合精度
+  fp16: true
+  bf16: false
+  
+  # 保存与日志
+  save_steps: 500
+  eval_steps: 100
+  logging_steps: 10
+  save_total_limit: 3
+  
+  # 早停
+  early_stopping:
+    patience: 5
+    min_delta: 0.001
+    
+# 评估配置
+evaluation:
+  metrics: ["accuracy", "loss"]
+  batch_size: 16
+  max_length: 512
+  
+# 系统配置
+system:
+  seed: 42
+  deterministic: true
+  num_workers: 4
+  pin_memory: true
+  
+  # GPU配置
+  gpu:
+    use_cuda: true
+    device_ids: [0]  # 使用的GPU ID列表
+    
+  # 内存管理
+  memory:
+    max_memory_per_gpu: "40GB"
+    offload_to_cpu: false
+    
+# 日志配置
+logging:
+  # WandB配置
+  wandb:
+    enabled: true
+    project: "strato-peft"
+    entity: null  # 你的WandB用户名或团队名
+    name: null    # 实验名称，如果为null则自动生成
+    tags: []
+    notes: ""
+    
+  # 本地日志
+  local:
+    log_dir: "./logs"
+    log_level: "INFO"
+    
+  # 性能分析
+  profiling:
+    enabled: false
+    profile_steps: 10
+    output_dir: "./profiles"
+    
+# 输出配置
+output:
+  base_dir: "./results"
+  experiment_dir: null  # 如果为null，则自动生成
+  save_model: true
+  save_optimizer: false
+  save_scheduler: false
+  
+# 检查点配置
+checkpoint:
+  resume_from: null  # 检查点路径，用于恢复训练
+  save_format: "safetensors"  # safetensors, pytorch
+  
+# 数据配置
+data:
+  max_seq_length: 512
+  truncation: true
+  padding: "max_length"
+  return_tensors: "pt"
+  
+  # 数据预处理
+  preprocessing:
+    remove_columns: []
+    rename_columns: {}
+    
+# 验证配置
+validation:
+  # 控制因素验证
+  verify_deterministic: true
+  verify_data_order: true
+  verify_model_init: true
+  
+  # 校验和
+  checksum:
+    enabled: true
+    save_adapter_masks: true

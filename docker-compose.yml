@@ -1,0 +1,245 @@
+version: '3.8'
+
+services:
+  # CUDA GPU training service
+  strato-cuda:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        PLATFORM: cuda
+        PYTHON_VERSION: 3.10
+        PYTORCH_VERSION: 2.1.0
+    image: strato-peft:cuda
+    container_name: strato-peft-cuda
+    runtime: nvidia
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+      - CUDA_VISIBLE_DEVICES=0
+      - STRATO_PLATFORM=cuda
+      - PYTHONPATH=/workspace
+    volumes:
+      - .:/workspace
+      - ./data:/workspace/data
+      - ./results:/workspace/results
+      - ./configs:/workspace/configs
+      - ~/.cache/huggingface:/home/strato/.cache/huggingface
+    working_dir: /workspace
+    command: tail -f /dev/null  # Keep container running
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    profiles:
+      - cuda
+      - gpu
+
+  # ROCm GPU training service
+  strato-rocm:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        PLATFORM: rocm
+        PYTHON_VERSION: 3.10
+        PYTORCH_VERSION: 2.0.1
+    image: strato-peft:rocm
+    container_name: strato-peft-rocm
+    environment:
+      - HIP_VISIBLE_DEVICES=0
+      - STRATO_PLATFORM=rocm
+      - PYTHONPATH=/workspace
+    volumes:
+      - .:/workspace
+      - ./data:/workspace/data
+      - ./results:/workspace/results
+      - ./configs:/workspace/configs
+      - ~/.cache/huggingface:/home/strato/.cache/huggingface
+      - /dev/kfd:/dev/kfd
+      - /dev/dri:/dev/dri
+    working_dir: /workspace
+    command: tail -f /dev/null
+    devices:
+      - /dev/kfd
+      - /dev/dri
+    group_add:
+      - video
+      - render
+    profiles:
+      - rocm
+      - amd
+
+  # CPU training service
+  strato-cpu:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        PLATFORM: cpu
+        PYTHON_VERSION: 3.10
+        PYTORCH_VERSION: 2.1.0
+    image: strato-peft:cpu
+    container_name: strato-peft-cpu
+    environment:
+      - STRATO_PLATFORM=cpu
+      - PYTHONPATH=/workspace
+      - OMP_NUM_THREADS=4
+      - MKL_NUM_THREADS=4
+    volumes:
+      - .:/workspace
+      - ./data:/workspace/data
+      - ./results:/workspace/results
+      - ./configs:/workspace/configs
+      - ~/.cache/huggingface:/home/strato/.cache/huggingface
+    working_dir: /workspace
+    command: tail -f /dev/null
+    deploy:
+      resources:
+        limits:
+          cpus: '8.0'
+          memory: 16G
+    profiles:
+      - cpu
+      - default
+
+  # Development service with Jupyter
+  strato-dev:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        PLATFORM: cuda
+        PYTHON_VERSION: 3.10
+        PYTORCH_VERSION: 2.1.0
+    image: strato-peft:dev
+    container_name: strato-peft-dev
+    runtime: nvidia
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+      - CUDA_VISIBLE_DEVICES=0
+      - STRATO_PLATFORM=cuda
+      - PYTHONPATH=/workspace
+      - JUPYTER_ENABLE_LAB=yes
+    volumes:
+      - .:/workspace
+      - ./data:/workspace/data
+      - ./results:/workspace/results
+      - ./configs:/workspace/configs
+      - ./notebooks:/workspace/notebooks
+      - ~/.cache/huggingface:/home/strato/.cache/huggingface
+    working_dir: /workspace
+    ports:
+      - "8888:8888"  # Jupyter
+      - "6006:6006"  # TensorBoard
+      - "8080:8080"  # MLflow
+    command: >
+      bash -c "
+        pip install jupyter jupyterlab tensorboard mlflow &&
+        jupyter lab --ip=0.0.0.0 --port=8888 --no-browser --allow-root \
+        --NotebookApp.token='' --NotebookApp.password='' &
+        tensorboard --logdir=logs --host=0.0.0.0 --port=6006 &
+        tail -f /dev/null
+      "
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    profiles:
+      - dev
+      - jupyter
+
+  # 数据库服务（用于实验跟踪）
+  postgres:
+    image: postgres:13
+    container_name: strato-peft-db
+    environment:
+      - POSTGRES_DB=strato_peft
+      - POSTGRES_USER=strato_user
+      - POSTGRES_PASSWORD=strato_pass
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    profiles:
+      - dev
+      - db
+
+  # Redis 缓存（用于实验缓存）
+  redis:
+    image: redis:7-alpine
+    container_name: strato-peft-redis
+    ports:
+      - "6379:6379"
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+    profiles:
+      - dev
+      - cache
+
+  # MLflow 跟踪服务器
+  mlflow:
+    image: python:3.9-slim
+    container_name: strato-peft-mlflow
+    depends_on:
+      - postgres
+    environment:
+      - MLFLOW_BACKEND_STORE_URI=postgresql://strato_user:strato_pass@postgres:5432/strato_peft
+      - MLFLOW_DEFAULT_ARTIFACT_ROOT=/mlflow/artifacts
+    volumes:
+      - mlflow_artifacts:/mlflow/artifacts
+    ports:
+      - "5000:5000"
+    command: >
+      bash -c "
+        pip install mlflow psycopg2-binary &&
+        mlflow server \
+          --backend-store-uri postgresql://strato_user:strato_pass@postgres:5432/strato_peft \
+          --default-artifact-root /mlflow/artifacts \
+          --host 0.0.0.0 \
+          --port 5000
+      "
+    profiles:
+      - dev
+      - mlflow
+
+# Named volumes for persistent data
+volumes:
+  huggingface_cache:
+    driver: local
+  results_data:
+    driver: local
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+  mlflow_artifacts:
+    driver: local
+
+# Networks
+networks:
+  default:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
+
+# Extension fields for reusability
+x-common-variables: &common-variables
+  PYTHONPATH: /workspace
+  TOKENIZERS_PARALLELISM: false
+  TRANSFORMERS_CACHE: /home/strato/.cache/huggingface
+  HF_HOME: /home/strato/.cache/huggingface
+
+x-common-volumes: &common-volumes
+  - .:/workspace
+  - ./data:/workspace/data:rw
+  - ./results:/workspace/results:rw
+  - ./configs:/workspace/configs:ro
+  - ~/.cache/huggingface:/home/strato/.cache/huggingface:rw

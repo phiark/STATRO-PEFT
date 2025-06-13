@@ -1,0 +1,110 @@
+# LoRA基线配置 - Llama-2-7B + MMLU
+# 继承基础配置并覆盖特定参数
+
+defaults:
+  - base_config
+
+# 实验元信息
+experiment:
+  name: "llama2_7b_mmlu_lora_baseline"
+  phase: "P-1"
+  description: "LoRA baseline experiment on Llama-2-7B with MMLU dataset"
+  tags: ["baseline", "lora", "llama2-7b", "mmlu", "rank16"]
+
+# 模型配置
+model:
+  name: "meta-llama/Llama-2-7b-hf"
+  
+# 任务配置
+task:
+  name: "mmlu"
+  subset: "dev"  # 使用MMLU开发集
+  max_samples: null  # 使用全部样本
+  
+# PEFT方法配置
+peft:
+  method: "lora"
+  
+  lora:
+    r: 16  # 论文中指定的rank
+    alpha: 32  # 通常设置为2*r
+    dropout: 0.1
+    target_modules: 
+      - "q_proj"
+      - "v_proj"
+      - "k_proj"
+      - "o_proj"
+      - "gate_proj"
+      - "up_proj"
+      - "down_proj"
+    bias: "none"
+    task_type: "CAUSAL_LM"
+    
+# 训练配置
+training:
+  # 优化器 - 论文指定参数
+  optimizer:
+    name: "AdamW"
+    lr: 2e-4  # 论文指定学习率
+    weight_decay: 0.01
+    
+  # 训练参数 - 论文指定
+  num_epochs: 3  # 3次完整遍历
+  per_device_train_batch_size: 4
+  per_device_eval_batch_size: 8
+  gradient_accumulation_steps: 16  # 论文指定
+  
+  # 混合精度
+  fp16: true
+  bf16: false
+  
+  # 保存与评估
+  save_steps: 200
+  eval_steps: 50
+  logging_steps: 10
+  
+# 评估配置
+evaluation:
+  metrics: ["accuracy", "loss", "perplexity"]
+  batch_size: 16
+  
+# 系统配置
+system:
+  seed: 42  # 论文指定种子之一
+  
+# 日志配置
+logging:
+  wandb:
+    enabled: true
+    name: "llama2_7b_mmlu_lora_rank16_seed42"
+    tags: ["baseline", "lora", "rank16", "seed42"]
+    notes: "LoRA baseline with rank=16 on MMLU task"
+    
+# 输出配置
+output:
+  experiment_dir: "llama2_7b/mmlu/lora_rank16_seed42"
+  
+# 验证配置 - 确保实验可重现性
+validation:
+  verify_deterministic: true
+  verify_data_order: true
+  verify_model_init: true
+  
+  checksum:
+    enabled: true
+    save_adapter_masks: true
+    
+# 性能监控
+monitoring:
+  # 资源使用监控
+  track_gpu_memory: true
+  track_cpu_usage: true
+  track_training_flops: true
+  
+  # 模型参数统计
+  count_trainable_params: true
+  count_total_params: true
+  
+  # 训练指标
+  track_loss_components: true
+  track_gradient_norms: true

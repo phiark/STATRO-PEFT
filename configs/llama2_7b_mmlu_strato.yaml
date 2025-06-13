@@ -1,0 +1,279 @@
+# STRATO-PEFT配置 - Llama-2-7B + MMLU
+# 核心方法配置，包含RL智能体和成本感知优化
+
+defaults:
+  - base_config
+
+# 实验元信息
+experiment:
+  name: "llama2_7b_mmlu_strato_peft"
+  phase: "P-1"
+  description: "STRATO-PEFT experiment on Llama-2-7B with MMLU dataset"
+  tags: ["strato-peft", "rl-agent", "cost-aware", "llama2-7b", "mmlu"]
+
+# 模型配置
+model:
+  name: "meta-llama/Llama-2-7b-hf"
+  
+# 任务配置
+task:
+  name: "mmlu"
+  subset: "dev"
+  max_samples: null
+  
+# PEFT方法配置
+peft:
+  method: "strato_peft"
+  
+  # STRATO-PEFT核心配置
+  strato_peft:
+    # 成本权重配置 - 论文表格9.4
+    lambda_cost: 0.2  # 成本-奖励权衡参数
+    alpha_params: 1.0  # 参数成本权重
+    beta_flops: 1.0    # FLOPs成本权重 
+    gamma_vram: 1.0    # VRAM成本权重
+    
+    # 基础适配器配置
+    base_adapter:
+      type: "lora"  # 可选: lora, dora, ia3
+      target_modules:
+        - "q_proj"
+        - "v_proj" 
+        - "k_proj"
+        - "o_proj"
+        - "gate_proj"
+        - "up_proj"
+        - "down_proj"
+      dropout: 0.1
+      bias: "none"
+      
+    # RL智能体配置
+    agent:
+      algorithm: "PPO"
+      
+      # PPO超参数
+      learning_rate: 3e-4
+      n_steps: 2048
+      batch_size: 64
+      n_epochs: 10
+      gamma: 0.99
+      gae_lambda: 0.95
+      clip_range: 0.2
+      ent_coef: 0.01
+      vf_coef: 0.5
+      max_grad_norm: 0.5
+      
+      # 网络架构
+      policy_net:
+        hidden_dims: [256, 128]
+        activation: "tanh"
+        
+      value_net:
+        hidden_dims: [256, 128]
+        activation: "tanh"
+        
+      # 探索策略
+      exploration:
+        initial_epsilon: 0.1
+        final_epsilon: 0.01
+        decay_steps: 1000
+        
+    # 秩调度器配置
+    scheduler:
+      rank_max: 32      # 论文表格9.4中的rank_max
+      rank_min: 1
+      initial_rank: 8   # 初始秩
+      
+      # 动态调整参数
+      growth_factor: 1.2
+      shrink_factor: 0.8
+      patience: 5
+      
+      # 边际效用阈值
+      utility_threshold: 0.01
+      cost_threshold: 0.1
+      
+      # 调整策略
+      adjustment_frequency: 50  # 每50步评估一次
+      min_improvement: 0.005
+      
+    # Go-Explore缓存配置
+    memory:
+      cache_size: 1000
+      revisit_threshold: 3      # 论文表格9.4中的mem_k
+      similarity_threshold: 0.95
+      
+      # 配置相似性度量
+      similarity_metric: "cosine"
+      hash_precision: 4
+      
+      # 缓存管理
+      eviction_policy: "lru"  # least recently used
+      compression: true
+      
+    # 内循环配置
+    inner_loop:
+      num_steps: 100    # 论文表格9.4中的K值
+      eval_frequency: 20
+      early_stopping_patience: 10
+      
+      # 快速验证配置
+      quick_eval:
+        enabled: true
+        sample_ratio: 0.1  # 使用10%的验证集进行快速评估
+        max_samples: 100
+        
+    # 映射构建器配置
+    mapper:
+      # 低秩探针配置
+      probe:
+        rank_range: [1, 8, 16, 32]
+        num_samples: 100
+        probe_steps: 50
+        
+      # 敏感性分析
+      sensitivity:
+        perturbation_scale: 0.01
+        num_perturbations: 10
+        
+      # 成本估算
+      cost_estimation:
+        flops_profiling: true
+        memory_profiling: true
+        timing_profiling: false
+        
+    # 奖励塑造
+    reward_shaping:
+      # 基础奖励
+      base_reward_scale: 1.0
+      
+      # 成本惩罚
+      cost_penalty_scale: 1.0
+      
+      # 稀疏性奖励
+      sparsity_bonus: 0.1
+      
+      # 稳定性奖励
+      stability_bonus: 0.05
+      
+      # 奖励归一化
+      normalize_rewards: true
+      reward_clip: 10.0
+      
+# 训练配置
+training:
+  # 优化器配置
+  optimizer:
+    name: "AdamW"
+    lr: 2e-4
+    weight_decay: 0.01
+    
+  # 训练参数
+  num_epochs: 3
+  per_device_train_batch_size: 4
+  per_device_eval_batch_size: 8
+  gradient_accumulation_steps: 16
+  
+  # 混合精度
+  fp16: true
+  
+  # STRATO-PEFT特定训练配置
+  strato_training:
+    # 外循环配置（策略搜索）
+    outer_loop:
+      max_episodes: 50
+      episode_length: 20
+      
+    # 策略更新频率
+    policy_update_frequency: 10  # 每10个情节更新一次策略
+    
+    # 热启动配置
+    warmup:
+      enabled: true
+      warmup_episodes: 5
+      use_random_policy: true
+      
+# 评估配置
+evaluation:
+  metrics: ["accuracy", "loss", "perplexity", "trainable_params", "total_flops", "peak_memory"]
+  
+  # STRATO-PEFT特定评估
+  strato_eval:
+    # 成本指标
+    track_parameter_cost: true
+    track_flops_cost: true
+    track_memory_cost: true
+    
+    # 效率指标
+    compute_efficiency_ratio: true
+    compute_sharpe_ratio: true
+    
+    # 配置分析
+    analyze_rank_distribution: true
+    analyze_layer_utilization: true
+    
+# 系统配置
+system:
+  seed: 42
+  
+# 日志配置
+logging:
+  wandb:
+    enabled: true
+    name: "llama2_7b_mmlu_strato_lambda02_rank32_seed42"
+    tags: ["strato-peft", "lambda0.2", "rank32", "seed42"]
+    notes: "STRATO-PEFT with cost-aware RL agent"
+    
+  # 详细日志配置
+  detailed_logging:
+    log_episode_details: true
+    log_policy_gradients: false  # 可能产生大量日志
+    log_reward_components: true
+    log_cost_breakdown: true
+    
+# 输出配置
+output:
+  experiment_dir: "llama2_7b/mmlu/strato_lambda02_rank32_seed42"
+  
+  # STRATO-PEFT特定输出
+  save_policy_checkpoints: true
+  save_episode_trajectories: true
+  save_cost_analysis: true
+  
+# 调试配置
+debug:
+  # RL调试
+  debug_rl_agent: false
+  visualize_policy: false
+  
+  # 成本调试
+  debug_cost_computation: false
+  profile_memory_usage: true
+  
+  # 快速测试模式
+  fast_dev_run: false  # 设置为true进行快速测试
+  
+# 性能优化
+optimization:
+  # 编译优化
+  torch_compile: false  # 实验性功能
+  
+  # 内存优化
+  gradient_checkpointing: true
+  use_cache: false
+  
+  # 并行化
+  dataloader_num_workers: 4
+  
+# 容错配置
+fault_tolerance:
+  # 自动重启
+  auto_resume: true
+  max_retries: 3
+  
+  # 检查点频率
+  checkpoint_frequency: 100
+  
+  # 异常处理
+  handle_oom: true
+  reduce_batch_on_oom: true
