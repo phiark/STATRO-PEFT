@@ -1,0 +1,181 @@
+# GPT-2 烟测配置 - 快速验证代码可运行性
+# 基于base_config.yaml的简化配置
+
+# 实验元信息
+experiment:
+  name: "gpt2_smoke_test"
+  phase: "P-0"
+  description: "GPT-2 smoke test for code verification"
+  tags: ["smoke_test", "gpt2", "lora"]
+
+# 模型配置 - 使用较小的GPT2模型
+model:
+  name: "gpt2"  # 使用最小的GPT2模型
+  cache_dir: "./cache/models"
+  torch_dtype: "float32"  # 使用float32避免兼容性问题
+  device_map: "auto"
+  trust_remote_code: false
+
+# 任务配置 - 使用简单的语言建模任务
+task:
+  name: "language_modeling"
+  dataset_name: "wikitext"
+  dataset_config: "wikitext-2-raw-v1"
+  max_samples: 100  # 限制样本数量加快测试
+  data_dir: "./data"
+
+# PEFT方法配置 - 先测试基本LoRA
+peft:
+  method: "lora"
+  
+  # LoRA参数 - 使用较小的rank加快训练
+  lora:
+    r: 4  # 较小的rank
+    alpha: 8
+    dropout: 0.1
+    target_modules: ["transformer.h.0.attn.c_attn", "transformer.h.0.attn.c_proj"]  # GPT2的注意力模块
+    bias: "none"
+    task_type: "CAUSAL_LM"
+
+# 训练配置 - 最小化训练时间
+training:
+  # 优化器
+  optimizer:
+    name: "AdamW"
+    lr: 5e-4  # 较大的学习率加快收敛
+    weight_decay: 0.01
+    betas: [0.9, 0.999]
+    eps: 1e-8
+  
+  # 学习率调度
+  lr_scheduler:
+    name: "cosine"
+    warmup_steps: 10
+    num_training_steps: 100
+  
+  # 训练参数 - 极简配置
+  num_epochs: 1
+  per_device_train_batch_size: 2
+  per_device_eval_batch_size: 2
+  gradient_accumulation_steps: 1
+  max_grad_norm: 1.0
+  
+  # 混合精度 - 关闭避免兼容性问题
+  fp16: false
+  bf16: false
+  
+  # 保存与日志
+  save_steps: 50
+  eval_steps: 50
+  logging_steps: 10
+  save_total_limit: 1
+  
+  # 早停 - 较宽松的条件
+  early_stopping:
+    patience: 10
+    min_delta: 0.01
+
+# 评估配置
+evaluation:
+  metrics: ["loss", "perplexity"]
+  batch_size: 2
+  max_length: 128  # 较短的序列长度
+
+# 系统配置
+system:
+  seed: 42
+  deterministic: false  # 关闭确定性操作加快速度
+  num_workers: 0  # 避免多进程问题
+  pin_memory: false
+
+  # GPU配置
+  gpu:
+    use_cuda: true
+    device_ids: [0]
+
+  # 内存管理
+  memory:
+    max_memory_per_gpu: "8GB"
+    offload_to_cpu: false
+
+# 日志配置
+logging:
+  # WandB配置 - 关闭避免网络问题
+  wandb:
+    enabled: false
+    project: "strato-peft-smoke-test"
+    entity: null
+    name: "gpt2_smoke_test"
+    tags: ["smoke_test"]
+    notes: "GPT2 smoke test"
+
+  # 本地日志
+  local:
+    log_dir: "./logs"
+    log_level: "INFO"
+
+  # 性能分析 - 关闭
+  profiling:
+    enabled: false
+    profile_steps: 10
+    output_dir: "./profiles"
+
+# 输出配置
+output:
+  base_dir: "./results"
+  experiment_dir: "gpt2_smoke_test"
+  save_model: true
+  save_optimizer: false
+  save_scheduler: false
+
+# 检查点配置
+checkpoint:
+  resume_from: null
+  save_format: "safetensors"
+
+# 数据配置
+data:
+  max_seq_length: 128  # 较短的序列长度加快训练
+  truncation: true
+  padding: "max_length"
+  return_tensors: "pt"
+
+  # 数据预处理
+  preprocessing:
+    remove_columns: []
+    rename_columns: {}
+
+# 验证配置
+validation:
+  # 控制因素验证 - 关闭减少复杂度
+  verify_deterministic: false
+  verify_data_order: false
+  verify_model_init: false
+
+  # 校验和
+  checksum:
+    enabled: false
+    save_adapter_masks: false
+
+# STRATO-PEFT特定配置（暂时不使用，但保留结构）
+strato_peft:
+  # 成本权重
+  lambda_cost: 0.1
+  alpha_params: 1.0
+  beta_flops: 0.1
+  gamma_vram: 0.1
+  
+  # RL智能体配置
+  agent:
+    algorithm: "PPO"
+    learning_rate: 3e-4
+    n_steps: 100
+    batch_size: 16
+    n_epochs: 1
+    gamma: 0.99
+  
+  # 内循环配置
+  inner_loop:
+    num_steps: 10
+    eval_frequency: 5
+    early_stopping_patience: 3

@@ -51,10 +51,17 @@ class LoRALayer(nn.Module):
         self.rank = rank
         self.alpha = alpha
         
-        # Get dimensions
+        # Get dimensions - support both Linear and Conv1D
+        from transformers.pytorch_utils import Conv1D
+        
         if hasattr(original_layer, 'in_features') and hasattr(original_layer, 'out_features'):
+            # Standard Linear layer
             in_features = original_layer.in_features
             out_features = original_layer.out_features
+        elif isinstance(original_layer, Conv1D):
+            # GPT2's Conv1D layer - note the dimension order is different
+            in_features = original_layer.weight.shape[0]  # Conv1D has transposed weights
+            out_features = original_layer.weight.shape[1]
         else:
             raise ValueError(f"Unsupported layer type: {type(original_layer)}")
         
@@ -93,8 +100,24 @@ class LoRALayer(nn.Module):
         # Original output
         original_output = self.original_layer(x)
         
-        # LoRA adaptation
-        lora_output = self.lora_B(self.dropout(self.lora_A(x)))
+        # LoRA adaptation - need to handle different input shapes for Conv1D vs Linear
+        from transformers.pytorch_utils import Conv1D
+        
+        if isinstance(self.original_layer, Conv1D):
+            # For Conv1D, we need to ensure correct tensor shapes
+            # Conv1D expects input as (..., in_features)
+            input_shape = x.shape
+            if len(input_shape) > 2:
+                # Reshape to 2D for linear operations
+                x_reshaped = x.view(-1, input_shape[-1])
+                lora_output = self.lora_B(self.dropout(self.lora_A(x_reshaped)))
+                # Reshape back to original shape
+                lora_output = lora_output.view(*input_shape[:-1], -1)
+            else:
+                lora_output = self.lora_B(self.dropout(self.lora_A(x)))
+        else:
+            # Standard Linear layer
+            lora_output = self.lora_B(self.dropout(self.lora_A(x)))
         
         # Scale and combine
         scaling = self.alpha / self.rank
@@ -172,8 +195,9 @@ class LoRAPEFT(BasePEFT):
         Returns:
             True if module should be replaced
         """
-        # Check if it's a linear layer
-        if not isinstance(module, nn.Linear):
+        # Check if it's a linear layer or Conv1D (used by GPT2)
+        from transformers.pytorch_utils import Conv1D
+        if not isinstance(module, (nn.Linear, Conv1D)):
             return False
         
         # Check if name matches target modules
@@ -340,3 +364,7 @@ class LoRAPEFT(BasePEFT):
         
         if hasattr(self.config, 'dropout') and (self.config.dropout < 0 or self.config.dropout >= 1):
             raise ValueError("LoRA dropout must be in range [0, 1)")
+
+
+# Alias for backward compatibility
+LoRAAdapter = LoRAPEFT

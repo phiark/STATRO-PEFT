@@ -1,4 +1,4 @@
-g#!/usr/bin/env python3
+#!/usr/bin/env python3
 """
 Configuration utilities for STRATO-PEFT experimental framework.
 

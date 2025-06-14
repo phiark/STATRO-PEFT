@@ -24,7 +24,7 @@ from torch.utils.data import DataLoader
 from omegaconf import DictConfig
 from transformers import PreTrainedModel, PreTrainedTokenizer
 
-from ..utils.reproducibility_utils import ReproducibilityManager
+from ..utils.reproducibility_utils import SeedManager
 from ..tasks.base_task import BaseTask, TaskMetrics
 from ..peft.base_peft import BasePEFT, PEFTMetrics
 

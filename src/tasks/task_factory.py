@@ -10,7 +10,7 @@ Date: 2024
 """
 
 import logging
-from typing import Dict, Any, Type
+from typing import Dict, Any, Type, List
 
 from omegaconf import DictConfig
 from transformers import PreTrainedTokenizer
@@ -20,8 +20,8 @@ from .language_modeling import LanguageModelingTask
 from .question_answering import QuestionAnsweringTask
 from .text_classification import TextClassificationTask
 from .multiple_choice import MultipleChoiceTask
-from .summarization import SummarizationTask
-from .translation import TranslationTask
+# from .summarization import SummarizationTask  # TODO: Implement
+# from .translation import TranslationTask  # TODO: Implement
 
 
 class TaskFactory:
@@ -57,13 +57,13 @@ class TaskFactory:
         "hellaswag": MultipleChoiceTask,
         "winogrande": MultipleChoiceTask,
         
-        # Summarization tasks
-        "summarization": SummarizationTask,
-        "sum": SummarizationTask,
+        # Summarization tasks (TODO: Implement)
+        # "summarization": SummarizationTask,
+        # "sum": SummarizationTask,
         
-        # Translation tasks
-        "translation": TranslationTask,
-        "mt": TranslationTask,
+        # Translation tasks (TODO: Implement)
+        # "translation": TranslationTask,
+        # "mt": TranslationTask,
     }
     
     # Dataset to task type mapping
