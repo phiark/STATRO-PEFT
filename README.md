@@ -491,10 +491,9 @@ MIT License - 详见 [LICENSE](LICENSE) 文件
 
 ## 支持
 
-- 📧 邮件支持: [your-email@domain.com]
+- 📧 邮件支持: [a@pholyn.com]
 - 🐛 问题报告: [GitHub Issues]
 - 💬 讨论交流: [GitHub Discussions]
-- 📖 文档: [项目 Wiki]
 
 ## 注意事项
 
